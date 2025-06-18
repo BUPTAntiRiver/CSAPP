@@ -275,6 +275,10 @@ int builtin_cmd(char **argv)
     if (!strcmp(argv[0], "&")) { /* Ignore singleton & */
         return 1;
     }
+    if (!strcmp(argv[0], "jobs")) { /* jobs command */
+        listjobs(jobs);
+        return 1;
+    }
     return 0;     /* not a builtin command */
 }
 
@@ -318,11 +322,7 @@ void sigchld_handler(int sig)
         if (WIFEXITED(status)) {
             deletejob(jobs, pid);
         }
-    }
-
-    if (errno != ECHILD) {
-        unix_error("waitpid error");
-    }
+    } 
 
     errno = olderrno; /* Restore errno */
     return;
