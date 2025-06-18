@@ -183,6 +183,7 @@ void eval(char *cmdline)
         sigprocmask(SIG_BLOCK, &mask, &prev); /* Block SIGCHLD */
 
         if ((pid = fork()) == 0) { /* Child running */
+            setpgid(0, 0); /* Set the process group ID to the child's PID */
             sigprocmask(SIG_UNBLOCK, &prev, NULL); /* Unblock SIGCHLD */
             if (execve(argv[0], argv, environ) < 0) {
                 printf("%s: Command not found\n", argv[0]);
@@ -317,10 +318,25 @@ void sigchld_handler(int sig)
     int olderrno = errno;
     pid_t pid;
     int status;
+    char buf[MAXLINE];
 
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         if (WIFEXITED(status)) {
             deletejob(jobs, pid);
+        }
+        if (WIFSIGNALED(status)) {
+            int len = sprintf(buf, "Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status)); 
+            if (write(STDOUT_FILENO, buf, len) < 0) {
+                unix_error("write error");
+            }
+            deletejob(jobs, pid);
+        }
+        if (WIFSTOPPED(status)) {
+            int len = sprintf(buf, "Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status)); 
+            if (write(STDOUT_FILENO, buf, len) < 0) {
+                unix_error("write error");
+            }
+            getjobpid(jobs, pid)->state = ST;
         }
     } 
 
@@ -335,6 +351,12 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    int olderrno = errno;
+    pid_t fg_pid = fgpid(jobs);
+
+    kill(-fg_pid, sig);
+
+    errno = olderrno;
     return;
 }
 
@@ -345,6 +367,12 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    int olderrno = errno;
+    pid_t fg_pid = fgpid(jobs);
+
+    kill(-fg_pid, sig);
+
+    errno = olderrno;
     return;
 }
 
