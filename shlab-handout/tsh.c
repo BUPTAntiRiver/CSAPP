@@ -169,28 +169,36 @@ void eval(char *cmdline)
     char buf[MAXLINE];
     int bg;
     pid_t pid;
+    sigset_t mask, prev;
 
     strcpy(buf, cmdline);
     bg = parseline(buf, argv); /* parse the command line */
     if (argv[0] == NULL)  /* ignore empty lines */
         return;
     
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    
     if (!builtin_cmd(argv)) {
+        sigprocmask(SIG_BLOCK, &mask, &prev); /* Block SIGCHLD */
+
         if ((pid = fork()) == 0) { /* Child running */
+            sigprocmask(SIG_UNBLOCK, &prev, NULL); /* Unblock SIGCHLD */
             if (execve(argv[0], argv, environ) < 0) {
                 printf("%s: Command not found\n", argv[0]);
                 exit(0);
             }
         }
 
+        addjob(jobs, pid, bg ? BG : FG, cmdline); /* Add job to the job list */
+
+        sigprocmask(SIG_SETMASK, &prev, NULL);
+
         if (!bg) {
-            int status;
-            if (waitpid(pid, &status, 0) < 0) {
-                unix_error("waitfg: waitpid error");
-            }
+            waitfg(pid);
         }
         else {
-            printf("%d %s", pid, cmdline);
+            printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
         }
     }
 
@@ -283,6 +291,9 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    while (pid == fgpid(jobs)) {
+        sleep(0);
+    }
     return;
 }
 
@@ -299,6 +310,21 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    int olderrno = errno;
+    pid_t pid;
+    int status;
+
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+        if (WIFEXITED(status)) {
+            deletejob(jobs, pid);
+        }
+    }
+
+    if (errno != ECHILD) {
+        unix_error("waitpid error");
+    }
+
+    errno = olderrno; /* Restore errno */
     return;
 }
 
