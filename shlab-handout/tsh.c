@@ -84,6 +84,7 @@ void unix_error(char *msg);
 void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
+int checkNum(char *s);
 
 /*
  * main - The shell's main routine 
@@ -294,10 +295,33 @@ void do_bgfg(char **argv)
 {
     struct job_t *job;
     char *id = argv[1];
+
+    /* error handling*/
+    if (id == NULL) {
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+
     if (id[0] == '%') { /* jid */
+        if (!checkNum(id + 1)) {
+            printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+            return;
+        }
         job = getjobjid(jobs, atoi(id + 1));
+        if (job == NULL) {
+            printf("%s: No such job\n", id);
+            return;
+        }
     } else { /* pid */
+        if (!checkNum(id)) {
+            printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+            return;
+        }
         job = getjobpid(jobs, atoi(id));
+        if (job == NULL) {
+            printf("(%s): No such process\n", id);
+            return;
+        }
     }
 
     kill(-(job->pid), SIGCONT);
@@ -550,6 +574,18 @@ void listjobs(struct job_t *jobs)
 	    printf("%s", jobs[i].cmdline);
 	}
     }
+}
+
+int checkNum(char *str)
+{
+    if (str == NULL || *str == '\0')
+        return 0;
+    while (*str) {
+        if (!isdigit(*str))
+            return 0;
+        str++;
+    }
+    return 1;
 }
 /******************************
  * end job list helper routines
